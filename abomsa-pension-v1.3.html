@@ -2467,6 +2467,32 @@ async function cancelScheduledNotification(notifId){
   }
 }
 
+// Sends an immediate "guest checked out" push — separate from the scheduled
+// overdue alert above, and fired every time a guest leaves (on time or
+// late), so the owner hears about it either way. Skipped for a "Report"
+// checkout (accidental check-in being corrected), since no guest actually
+// stayed or left.
+async function sendCheckoutNotification(logEntry){
+  try{
+    if(!isOnline || logEntry.flagged) return;
+    await fetchWithTimeout('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': 'Key ' + ONESIGNAL_REST_KEY
+      },
+      body: JSON.stringify({
+        app_id: ONESIGNAL_APP_ID,
+        included_segments: ['Subscribed Users'],
+        headings: { en: '✅ Guest Checked Out' },
+        contents: { en: `Room ${logEntry.room} — ${logEntry.guestName || 'guest'} checked out (${logEntry.total} Birr)` }
+      })
+    }, 10000);
+  }catch(err){
+    console.error('sendCheckoutNotification failed', err);
+  }
+}
+
 async function jsonbinCreate(masterKey, data){
   if(!isOnline) throw new Error('offline');
   const res = await fetchWithTimeout('https://api.jsonbin.io/v3/b', {
@@ -4011,6 +4037,7 @@ async function checkOut(isReport){
     flagged: !!isReport,
   };
   bookingLog.push(logEntry);
+  sendCheckoutNotification(logEntry);
 
   // Cancel any overdue push scheduled for this stay — it's no longer needed
   // once the guest has actually checked out.
